@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在庫分析ダッシュボード | 日本光電</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Yu Gothic UI', Meiryo, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1600px; margin: 0 auto; }
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            animation: slideDown 0.5s ease-out;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .header h1 { color: #333; font-size: 28px; margin-bottom: 15px; }
+        .header-subtitle { color: #666; font-size: 14px; margin-top: 10px; }
+        
+        .year-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .selector-label {
+            font-weight: 600;
+            color: #666;
+            font-size: 15px;
+        }
+        .year-btn {
+            padding: 10px 24px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .year-btn:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+            transform: translateY(-2px);
+        }
+        .year-btn.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-color: #667eea;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .controls { 
+            display: flex; 
+            gap: 15px; 
+            flex-wrap: wrap; 
+            margin-top: 15px;
+        }
+        select {
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        select:hover { border-color: #667eea; }
+        
+        .reset-btn {
+            background: #f39c12;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .reset-btn:hover {
+            background: #e67e22;
+            transform: translateY(-2px);
+        }
+        
+        .refresh-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        .refresh-btn:hover { transform: translateY(-2px); }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 18px;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        
+        .info-panel {
+            background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-left: 6px solid #f39c12;
+            animation: slideDown 0.6s ease-out;
+        }
+        .info-panel h2 { color: #2d3436; font-size: 24px; margin-bottom: 20px; }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .info-box {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .info-box h3 {
+            color: #2d3436;
+            font-size: 18px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #f39c12;
+            padding-bottom: 10px;
+        }
+        .info-box ul { list-style: none; padding: 0; }
+        .info-box li {
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        .info-box li:last-child { border-bottom: none; }
+        .status-excellent { color: #27ae60; font-weight: bold; }
+        .status-good { color: #f39c12; font-weight: bold; }
+        .status-warning { color: #e67e22; font-weight: bold; }
+        .status-danger { color: #e74c3c; font-weight: bold; }
+        .formula {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 15px;
+            margin: 15px 0;
+            text-align: center;
+            font-weight: bold;
+        }
+        .highlight-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        
+        .cash-speed-panel {
+            background: linear-gradient(135deg, #a8e6cf 0%, #56ab91 100%);
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-left: 6px solid #27ae60;
+            animation: slideDown 0.7s ease-out;
+        }
+        .cash-speed-panel h2 {
+            color: #1e3a2e;
+            font-size: 22px;
+            margin-bottom: 15px;
+        }
+        .cash-speed-content {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .speed-metric {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .speed-icon { font-size: 36px; }
+        .speed-text { flex: 1; }
+        .speed-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #27ae60;
+        }
+        .speed-label {
+            font-size: 14px;
+            color: #666;
+            white-space: pre-line;
+            line-height: 1.6;
+        }
+        
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .kpi-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            animation: fadeInUp 0.6s ease-out both;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .kpi-card:nth-child(1) { animation-delay: 0.1s; }
+        .kpi-card:nth-child(2) { animation-delay: 0.2s; }
+        .kpi-card:nth-child(3) { animation-delay: 0.3s; }
+        .kpi-card:nth-child(4) { animation-delay: 0.4s; }
+        .kpi-card:nth-child(5) { animation-delay: 0.5s; }
+        .kpi-label { color: #666; font-size: 14px; margin-bottom: 10px; }
+        .kpi-value { font-size: 36px; font-weight: bold; color: #333; margin-bottom: 5px; }
+        .kpi-subtext { font-size: 13px; color: #999; }
+        
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .chart-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .chart-card h2 { color: #333; font-size: 18px; margin-bottom: 20px; }
+        .table-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow-x: auto;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #e0e0e0;
+            font-size: 13px;
+        }
+        td { 
+            padding: 12px; 
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+        }
+        tr:hover td { background: #f8f9fa; }
+        .number { text-align: right; }
+        .row-excellent { background: #d5f4e6 !important; }
+        .row-good { background: #fff3cd !important; }
+        .row-warning { background: #ffe5d0 !important; }
+        .row-danger { background: #f8d7da !important; }
+        .speed-icons { font-size: 16px; }
+        
+        @media (max-width: 768px) {
+            .chart-grid { grid-template-columns: 1fr; }
+            .info-grid { grid-template-columns: 1fr; }
+            .kpi-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 在庫分析ダッシュボード</h1>
+            <div class="header-subtitle">
+                在庫管理は資金管理。在庫回転率を意識して、会社のキャッシュフローを改善しましょう。
+            </div>
+            
+            <!-- 年度選択ボタン -->
+            <div class="year-selector">
+                <span class="selector-label">📅 表示年度:</span>
+                <button class="year-btn active" id="yearAll" onclick="selectYear('all')">全年度</button>
+                <button class="year-btn" id="year2024" onclick="selectYear('2024')">2024年度</button>
+                <button class="year-btn" id="year2025" onclick="selectYear('2025')">2025年度</button>
+            </div>
+            
+            <!-- フィルター -->
+            <div class="controls">
+                <select id="departmentFilter"><option value="all">全部門</option></select>
+                <select id="officeFilter"><option value="all">全営業所</option></select>
+                <button class="reset-btn" onclick="resetFilters()">🔄 リセット</button>
+                <button class="refresh-btn" onclick="loadData()">↻ ページ更新</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">データを読み込んでいます...</div>
+        <div id="error" style="display:none;"></div>
+
+        <div id="content" style="display:none;">
+            <div class="info-panel">
+                <h2>💡 在庫回転率とキャッシュフローの関係</h2>
+                <div class="formula">
+                    在庫回転率 = 当月出庫数 ÷ 平均在庫数（前月末在庫 + 月末在庫）÷ 2
+                </div>
+                <div class="highlight-box">
+                    <strong>💰 なぜ在庫回転率が重要なのか？</strong><br>
+                    在庫は「仕入先に支払済みだが、まだ売上として回収できていないお金」です。<br>
+                    在庫回転率が低い = 資金が長期間固定される = キャッシュフローが悪化します。
+                </div>
+                <div class="info-grid">
+                    <div class="info-box">
+                        <h3>🎯 評価基準</h3>
+                        <ul>
+                            <li><span class="status-excellent">🟢 月間12回以上</span> = 優良<br>
+                            <small>約2.5日で在庫が入れ替わる。資金効率が非常に良い。</small></li>
+                            <li><span class="status-good">🟡 月間6〜12回</span> = 標準<br>
+                            <small>約3〜5日で在庫が入れ替わる。業界平均レベル。</small></li>
+                            <li><span class="status-warning">🟠 月間3〜6回</span> = 要注意<br>
+                            <small>約5〜10日で在庫を保有。改善の余地あり。</small></li>
+                            <li><span class="status-danger">🔴 月間3回未満</span> = 改善必須<br>
+                            <small>10日以上在庫を保有。資金圧迫の危険。</small></li>
+                        </ul>
+                    </div>
+                    <div class="info-box">
+                        <h3>💸 資金繰りへの影響</h3>
+                        <ul>
+                            <li><strong>本社への支払</strong><br>20日締め → 4ヶ月後払い（120日猶予）</li>
+                            <li><strong>ディーラーからの入金</strong><br>優良：60日後、医薬品卸：180日後</li>
+                            <li><strong>在庫保管が長い</strong><br>→ 資金が固定 → 他の取引に使えない</li>
+                        </ul>
+                    </div>
+                    <div class="info-box">
+                        <h3>✅ 実践ポイント</h3>
+                        <ul>
+                            <li>📦 在庫は最小限に</li>
+                            <li>⚡ 素早い出荷・納品</li>
+                            <li>🏆 優良ディーラー優先</li>
+                            <li>🚨 滞留在庫に注意</li>
+                        </ul>
+                    </div>
+                    <div class="info-box">
+                        <h3>📌 参考データ</h3>
+                        <ul>
+                            <li>製造業平均：7.55回/年</li>
+                            <li>当社目標：月間6回以上</li>
+                            <li>在庫金額は実データを使用</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cash-speed-panel">
+                <h2>⚡ あなたの営業所の資金回転スピード</h2>
+                <div class="cash-speed-content">
+                    <div class="speed-metric">
+                        <div class="speed-icon">💰</div>
+                        <div class="speed-text">
+                            <div class="speed-value" id="speedDays">-</div>
+                            <div class="speed-label">平均 <span id="speedDaysText">-</span> で在庫が現金化</div>
+                        </div>
+                    </div>
+                    <div class="speed-metric">
+                        <div class="speed-icon">⚡</div>
+                        <div class="speed-text">
+                            <div class="speed-value" id="speedHourly">-</div>
+                            <div class="speed-label">1時間あたり約 <span id="speedHourlyText">-</span> のペースで現金化</div>
+                        </div>
+                    </div>
+                    <div class="speed-metric">
+                        <div class="speed-icon">📊</div>
+                        <div class="speed-text">
+                            <div class="speed-value" id="speedDaily">-</div>
+                            <div class="speed-label" id="speedDailyRate">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dashboard">
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-label">📦 月末在庫総数</div>
+                        <div class="kpi-value" id="kpiInventory">-</div>
+                        <div class="kpi-subtext" id="kpiInventoryAmount">推定金額: -</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">🔄 平均回転率</div>
+                        <div class="kpi-value" id="kpiTurnover">-</div>
+                        <div class="kpi-subtext" id="kpiTurnoverDays">約-日で現金化</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">📈 当月出庫数</div>
+                        <div class="kpi-value" id="kpiShipment">-</div>
+                        <div class="kpi-subtext" id="kpiShipmentAmount">推定金額: -</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">🏢 営業所数</div>
+                        <div class="kpi-value" id="kpiOffices">-</div>
+                        <div class="kpi-subtext">集計対象</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">⚡ 現金化スピード</div>
+                        <div class="kpi-value" id="kpiSpeed">-</div>
+                        <div class="kpi-subtext" id="kpiSpeedText">時間/日単位</div>
+                    </div>
+                </div>
+
+                <div class="chart-grid">
+                    <div class="chart-card">
+                        <h2>📊 在庫推移</h2>
+                        <canvas id="inventoryChart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h2>🔄 在庫回転率トレンド</h2>
+                        <canvas id="turnoverChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <h2>🏢 営業所別詳細（最新月）</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>順位</th>
+                                <th>営業所</th>
+                                <th>部門</th>
+                                <th class="number">月末在庫</th>
+                                <th class="number">当月出庫</th>
+                                <th class="number">回転率</th>
+                                <th class="number">現金化日数</th>
+                                <th>スピード</th>
+                                <th>評価</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allData = [];
+        let charts = {};
+        let selectedYear = 'all';
+
+        // CSV読み込み
+        async function loadData() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('content').style.display = 'none';
+
+                const response = await fetch('data.csv');
+                if (!response.ok) throw new Error('data.csvファイルが見つかりません');
+                
+                const text = await response.text();
+                allData = parseCSV(text);
+                
+                if (allData.length === 0) throw new Error('データが空です');
+
+                initializeFilters();
+                updateDashboard();
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').innerHTML = 
+                    `<strong>エラー:</strong> ${error.message}<br>` +
+                    `data.csv ファイルが同じフォルダにあることを確認してください。`;
+            }
+        }
+
+        // CSV解析
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            return lines.slice(1).map(line => {
+                const values = line.split(',');
+                const yyyymm = values[0]?.trim();
+                const year = parseInt(yyyymm.substring(0, 4));
+                const month = parseInt(yyyymm.substring(4, 6));
+                
+                return {
+                    月YYYYMM: yyyymm,
+                    年: year,
+                    月数値: month,
+                    月: `${month}月`,
+                    年月: `${year}年${month}月`,
+                    営業所: values[1]?.trim(),
+                    部門: values[2]?.trim(),
+                    前月末在庫: parseInt(values[3]) || 0,
+                    前月末在庫高: parseInt(values[4]) || 0,
+                    当月入庫: parseInt(values[5]) || 0,
+                    当月入庫高: parseInt(values[6]) || 0,
+                    当月出庫: parseInt(values[7]) || 0,
+                    当月出庫高: parseInt(values[8]) || 0,
+                    月末在庫: parseInt(values[9]) || 0,
+                    月末在庫高: parseInt(values[10]) || 0,
+                    在庫回転率: parseFloat(values[11]) || 0
+                };
+            });
+        }
+
+        // ユーティリティ関数
+        function formatMoney(amount) {
+            return '¥' + Math.round(amount).toLocaleString();
+        }
+
+        function calculateCashDays(turnoverRate) {
+            return 30 / turnoverRate;
+        }
+
+        function getSpeedIcons(days) {
+            if (days < 1) return '⚡⚡⚡';
+            if (days < 3) return '⚡⚡';
+            if (days < 7) return '⚡';
+            return '🐌';
+        }
+
+        // 営業所の並び順（AY* → AJ* → BY*）
+        function sortOffices(offices) {
+            return offices.sort((a, b) => {
+                const isAY_a = a.startsWith('AY');
+                const isAY_b = b.startsWith('AY');
+                if (isAY_a && !isAY_b) return -1;
+                if (!isAY_a && isAY_b) return 1;
+                
+                const isAJ_a = a.startsWith('AJ');
+                const isAJ_b = b.startsWith('AJ');
+                if (isAJ_a && !isAJ_b) return -1;
+                if (!isAJ_a && isAJ_b) return 1;
+                
+                return a.localeCompare(b);
+            });
+        }
+
+        // 月を4月始まりでソート
+        function sortMonthsFiscalYear(dataArray) {
+            return dataArray.sort((a, b) => {
+                const fiscalYearA = a.月数値 >= 4 ? a.年 : a.年 - 1;
+                const fiscalYearB = b.月数値 >= 4 ? b.年 : b.年 - 1;
+                
+                if (fiscalYearA !== fiscalYearB) {
+                    return fiscalYearA - fiscalYearB;
+                }
+                
+                const fiscalMonthA = a.月数値 >= 4 ? a.月数値 - 4 : a.月数値 + 8;
+                const fiscalMonthB = b.月数値 >= 4 ? b.月数値 - 4 : b.月数値 + 8;
+                
+                return fiscalMonthA - fiscalMonthB;
+            });
+        }
+        // 年度選択
+        function selectYear(year) {
+            selectedYear = year;
+            
+            document.querySelectorAll('.year-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById('year' + (year === 'all' ? 'All' : year)).classList.add('active');
+            
+            updateDashboard();
+        }
+
+        // フィルターリセット
+        function resetFilters() {
+            selectYear('all');
+            document.getElementById('departmentFilter').value = 'all';
+            document.getElementById('officeFilter').value = 'all';
+            updateDashboard();
+        }
+
+        // フィルター初期化
+        function initializeFilters() {
+            const offices = [...new Set(allData.map(d => d.営業所))];
+            const departments = [...new Set(allData.map(d => d.部門))].sort();
+
+            const sortedOffices = sortOffices(offices);
+
+            document.getElementById('officeFilter').innerHTML = '<option value="all">全営業所</option>' +
+                sortedOffices.map(o => `<option value="${o}">${o}</option>`).join('');
+            
+            document.getElementById('departmentFilter').innerHTML = '<option value="all">全部門</option>' +
+                departments.map(d => `<option value="${d}">${d}</option>`).join('');
+
+            document.getElementById('officeFilter').onchange = updateDashboard;
+            document.getElementById('departmentFilter').onchange = updateDashboard;
+        }
+
+        // データフィルタリング
+        function getFilteredData() {
+            const dept = document.getElementById('departmentFilter').value;
+            const office = document.getElementById('officeFilter').value;
+
+            return allData.filter(d => {
+                // 年度フィルター
+                if (selectedYear !== 'all') {
+                    const fiscalYear = d.月数値 >= 4 ? d.年 : d.年 - 1;
+                    if (fiscalYear !== parseInt(selectedYear)) return false;
+                }
+                
+                if (dept !== 'all' && d.部門 !== dept) return false;
+                if (office !== 'all' && d.営業所 !== office) return false;
+                
+                return true;
+            });
+        }
+
+        // KPI更新
+        function updateKPIs(data) {
+            const totalInventory = data.reduce((sum, d) => sum + d.月末在庫, 0);
+            const totalInventoryAmount = data.reduce((sum, d) => sum + d.月末在庫高, 0);
+            const avgTurnover = data.reduce((sum, d) => sum + d.在庫回転率, 0) / data.length;
+            const totalShipment = data.reduce((sum, d) => sum + d.当月出庫, 0);
+            const totalShipmentAmount = data.reduce((sum, d) => sum + d.当月出庫高, 0);
+            const offices = new Set(data.map(d => d.営業所)).size;
+
+            document.getElementById('kpiInventory').textContent = totalInventory.toLocaleString();
+            document.getElementById('kpiInventoryAmount').textContent = 
+                '推定金額: ' + formatMoney(totalInventoryAmount);
+
+            document.getElementById('kpiTurnover').textContent = avgTurnover.toFixed(1);
+            const avgDays = calculateCashDays(avgTurnover);
+            document.getElementById('kpiTurnoverDays').textContent = 
+                `約${avgDays.toFixed(1)}日で現金化`;
+
+            document.getElementById('kpiShipment').textContent = totalShipment.toLocaleString();
+            document.getElementById('kpiShipmentAmount').textContent = 
+                '推定金額: ' + formatMoney(totalShipmentAmount);
+
+            document.getElementById('kpiOffices').textContent = offices;
+
+            if (avgDays < 1) {
+                document.getElementById('kpiSpeed').textContent = `${(avgDays * 24).toFixed(1)}h`;
+                document.getElementById('kpiSpeedText').textContent = '時間で現金化 ⚡⚡⚡';
+            } else {
+                document.getElementById('kpiSpeed').textContent = `${avgDays.toFixed(1)}日`;
+                document.getElementById('kpiSpeedText').textContent = 'で現金化';
+            }
+
+            // 資金回転スピードパネル
+            const hourlyAmount = totalInventoryAmount / avgDays / 24;
+            const dailyTurnover = 30 / avgDays;
+            const cycleHours = 24 / dailyTurnover;
+
+            if (avgDays < 1) {
+                document.getElementById('speedDays').textContent = `${(avgDays * 24).toFixed(1)}時間`;
+                document.getElementById('speedDaysText').textContent = `${(avgDays * 24).toFixed(1)}時間`;
+            } else {
+                document.getElementById('speedDays').textContent = `${avgDays.toFixed(1)}日`;
+                document.getElementById('speedDaysText').textContent = `${avgDays.toFixed(1)}日`;
+            }
+
+            document.getElementById('speedHourly').textContent = formatMoney(hourlyAmount);
+            document.getElementById('speedHourlyText').textContent = formatMoney(hourlyAmount);
+
+            document.getElementById('speedDaily').textContent = `${dailyTurnover.toFixed(1)}回転/日`;
+            
+            let cycleText = '';
+            if (cycleHours < 1) {
+                cycleText = `約${(cycleHours * 60).toFixed(0)}分`;
+            } else {
+                cycleText = `約${cycleHours.toFixed(1)}時間`;
+            }
+            
+            document.getElementById('speedDailyRate').textContent = 
+                `1日に${dailyTurnover.toFixed(1)}回転（${cycleText}で全在庫が入れ替わる）\n💡 在庫100個なら、1日で${(dailyTurnover * 100).toFixed(0)}個出荷されるペース`;
+        }
+
+        // グラフ更新
+        function updateCharts(data) {
+            const monthlyData = {};
+            data.forEach(d => {
+                const key = d.月YYYYMM;
+                if (!monthlyData[key]) {
+                    monthlyData[key] = { 
+                        在庫: 0, 
+                        出庫: 0, 
+                        回転率: [],
+                        年: d.年,
+                        月数値: d.月数値,
+                        月: d.月,
+                        年月: d.年月
+                    };
+                }
+                monthlyData[key].在庫 += d.月末在庫;
+                monthlyData[key].出庫 += d.当月出庫;
+                monthlyData[key].回転率.push(d.在庫回転率);
+            });
+
+            const sortedData = sortMonthsFiscalYear(Object.values(monthlyData));
+            
+            // 年度が複数ある場合は年月表示、単一年度なら月のみ
+            const years = [...new Set(sortedData.map(d => d.月数値 >= 4 ? d.年 : d.年 - 1))];
+            const useYearMonth = years.length > 1 || selectedYear === 'all';
+            
+            const labels = sortedData.map(d => useYearMonth ? d.年月 : d.月);
+            const inventoryData = sortedData.map(d => d.在庫);
+            const shipmentData = sortedData.map(d => d.出庫);
+            const turnoverData = sortedData.map(d => 
+                d.回転率.reduce((a,b) => a+b, 0) / d.回転率.length
+            );
+
+            // 在庫推移グラフ
+            if (charts.inventory) charts.inventory.destroy();
+            charts.inventory = new Chart(document.getElementById('inventoryChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '月末在庫',
+                        data: inventoryData,
+                        backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        borderWidth: 2
+                    }, {
+                        label: '当月出庫',
+                        data: shipmentData,
+                        backgroundColor: 'rgba(118, 75, 162, 0.7)',
+                        borderColor: 'rgba(118, 75, 162, 1)',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { 
+                        legend: { position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 回転率グラフ
+            if (charts.turnover) charts.turnover.destroy();
+            charts.turnover = new Chart(document.getElementById('turnoverChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '平均在庫回転率',
+                        data: turnoverData,
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        borderWidth: 3,
+                        pointRadius: 6,
+                        pointBackgroundColor: 'rgba(102, 126, 234, 1)',
+                        pointHoverRadius: 8
+                    }, {
+                        label: '優良ライン（12回）',
+                        data: Array(labels.length).fill(12),
+                        borderColor: 'rgba(39, 174, 96, 0.8)',
+                        borderWidth: 2,
+                        borderDash: [10, 5],
+                        fill: false,
+                        pointRadius: 0
+                    }, {
+                        label: '標準ライン（6回）',
+                        data: Array(labels.length).fill(6),
+                        borderColor: 'rgba(243, 156, 18, 0.8)',
+                        borderWidth: 2,
+                        borderDash: [10, 5],
+                        fill: false,
+                        pointRadius: 0
+                    }, {
+                        label: '要注意ライン（3回）',
+                        data: Array(labels.length).fill(3),
+                        borderColor: 'rgba(231, 76, 60, 0.8)',
+                        borderWidth: 2,
+                        borderDash: [10, 5],
+                        fill: false,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { 
+                        legend: { position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(1);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(1);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        // テーブル更新
+        function updateTable(data) {
+            // 最新月を取得
+            const sortedData = sortMonthsFiscalYear([...data]);
+            const latestMonth = sortedData.length > 0 ? sortedData[sortedData.length - 1].月YYYYMM : null;
+            
+            if (!latestMonth) {
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="9">データがありません</td></tr>';
+                return;
+            }
+            
+            const latestData = data.filter(d => d.月YYYYMM === latestMonth)
+                .sort((a, b) => b.在庫回転率 - a.在庫回転率);
+
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = latestData.map((d, i) => {
+                let rowClass = '';
+                let statusEmoji = '';
+                let statusText = '';
+                const cashDays = calculateCashDays(d.在庫回転率);
+                const speedIcons = getSpeedIcons(cashDays);
+                
+                if (d.在庫回転率 >= 12) {
+                    rowClass = 'row-excellent';
+                    statusEmoji = '🟢';
+                    statusText = '優良';
+                } else if (d.在庫回転率 >= 6) {
+                    rowClass = 'row-good';
+                    statusEmoji = '🟡';
+                    statusText = '標準';
+                } else if (d.在庫回転率 >= 3) {
+                    rowClass = 'row-warning';
+                    statusEmoji = '🟠';
+                    statusText = '要注意';
+                } else {
+                    rowClass = 'row-danger';
+                    statusEmoji = '🔴';
+                    statusText = '改善必須';
+                }
+
+                let cashDaysText = '';
+                if (cashDays < 1) {
+                    cashDaysText = `${(cashDays * 24).toFixed(1)}時間`;
+                } else {
+                    cashDaysText = `${cashDays.toFixed(1)}日`;
+                }
+                
+                return `
+                    <tr class="${rowClass}">
+                        <td><strong>${i + 1}</strong></td>
+                        <td><strong>${d.営業所}</strong></td>
+                        <td>${d.部門}</td>
+                        <td class="number">${d.月末在庫.toLocaleString()}</td>
+                        <td class="number">${d.当月出庫.toLocaleString()}</td>
+                        <td class="number"><strong>${d.在庫回転率.toFixed(1)}</strong></td>
+                        <td class="number">${cashDaysText}</td>
+                        <td class="speed-icons">${speedIcons}</td>
+                        <td>${statusEmoji} ${statusText}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ダッシュボード更新
+        function updateDashboard() {
+            const data = getFilteredData();
+            if (data.length === 0) {
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').innerHTML = 
+                    '<strong>データなし:</strong> 選択した条件に該当するデータがありません。';
+                return;
+            }
+            document.getElementById('error').style.display = 'none';
+            
+            updateKPIs(data);
+            updateCharts(data);
+            updateTable(data);
+        }
+
+        // ページ読み込み時に実行
+        window.addEventListener('load', loadData);
+    </script>
+</body>
+</html>
